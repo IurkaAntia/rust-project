@@ -1,28 +1,45 @@
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{web, App, HttpResponse, HttpServer};
+use diesel::prelude::*;
+use diesel::mysql::MysqlConnection; // Import MysqlConnection from Diesel
+use dotenv::dotenv;
+use std::env;
 
-#[get("/")]
-async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
+mod models; // Import your models
+mod schema;
+mod seed;
+// Import your schema
+
+// Establish connection to MySQL
+pub fn establish_connection() -> MysqlConnection {
+    dotenv().ok(); // Load environment variables from .env
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set in .env");
+    MysqlConnection::establish(&database_url)
+        .expect("Error connecting to the database")
 }
 
-#[post("/echo")]
-async fn echo(req_body: String) -> impl Responder {
-    HttpResponse::Ok().body(req_body)
-}
+// Define route handler for getting users
+async fn get_users() -> HttpResponse {
+    let mut connection = establish_connection();
 
-async fn manual_hello() -> impl Responder {
-    HttpResponse::Ok().body("Hey there!")
+    // Query users from the database
+    use crate::schema::users::dsl::*;
+    let results = users
+        .load::<models::User>(&mut connection) // Use models::User
+        .expect("Error loading users");
+
+    HttpResponse::Ok().json(results) // Return users as JSON response
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Start the Actix web server
+    seed::run();
     HttpServer::new(|| {
         App::new()
-            .service(hello)
-            .service(echo)
-            .route("/hey", web::get().to(manual_hello))
+            .route("/", web::get().to(get_users)) // Define route for fetching users
     })
-        .bind(("127.0.0.1", 8080))?
+        .bind("127.0.0.1:8080")? // Bind to localhost
         .run()
         .await
 }
